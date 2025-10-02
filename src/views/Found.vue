@@ -11,6 +11,12 @@ const error = ref(null)
 const showQRDialog = ref(false)
 const isFromCache = ref(false)
 
+// 挪车通知相关
+const notifyPhone = ref('')
+const notifyLoading = ref(false)
+const notifySuccess = ref(false)
+const notifyError = ref(null)
+
 /**
  * 获取状态对应的颜色
  * @param {string} status - 物品状态
@@ -63,30 +69,28 @@ const formatDate = (dateStr) => {
 
 /**
  * 从缓存加载数据并获取最新数据
- * 优先显示本地缓存的数据，同时从API获取最新数据
+ * 优先显示本地缓存的数据,同时从API获取最新数据
  */
 const loadFromCacheAndFetch = async () => {
   try {
-    // 先尝试从缓存获取数据
-    const cachedItem = storageService.getItemFromCache(key.value)
+    // 直接获取最新数据，不优先使用缓存
+    loading.value = true
+    await fetchItemDetails(false)
+  } catch (err) {
+    console.error("Error loading item data:", err)
     
+    // 如果网络请求失败，尝试使用缓存数据作为降级方案
+    const cachedItem = storageService.getItemFromCache(key.value)
     if (cachedItem) {
-      // 如果有缓存，立即显示
+      console.log('Network request failed, using cached data as fallback:', key.value)
       item.value = cachedItem
       isFromCache.value = true
-      loading.value = true // 保持加载状态，同时获取最新数据
-      
-      // 在后台获取最新数据
-      fetchItemDetails(true)
+      error.value = "无法获取最新数据，显示的是缓存内容（可能已过期）"
     } else {
-      // 没有缓存，直接获取最新数据
-      loading.value = true
-      fetchItemDetails(false)
+      error.value = "获取物品信息失败，且无缓存数据可用"
     }
-  } catch (err) {
-    console.error("Error loading cached data:", err)
-    // 如果缓存加载失败，直接获取最新数据
-    fetchItemDetails(false)
+    
+    loading.value = false
   }
 }
 
@@ -100,7 +104,8 @@ const fetchItemDetails = async (isBackground = false) => {
       loading.value = true
     }
     
-    const data = await apiService.getObject(key.value)
+    // 强制从API获取最新数据，不使用缓存
+    const data = await apiService.getObject(key.value, false)
     
     // 更新本地缓存
     storageService.saveItemToCache(key.value, data)
@@ -114,10 +119,48 @@ const fetchItemDetails = async (isBackground = false) => {
     
     // 如果是后台请求且已有缓存数据显示，则不显示错误
     if (!isBackground || !item.value) {
-      error.value = "获取物品信息失败：" + err.message
+      // 重新抛出错误，让上层处理
+      throw err
     }
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 发送挪车通知
+ */
+const sendMoveCarNotification = async () => {
+  if (!item.value || !item.value.id) {
+    return
+  }
+  
+  notifyLoading.value = true
+  notifyError.value = null
+  notifySuccess.value = false
+  
+  try {
+    const result = await apiService.notifyMoveCar(
+      item.value.id, 
+      notifyPhone.value || null
+    )
+    
+    if (result.success) {
+      notifySuccess.value = true
+      notifyPhone.value = '' // 清空输入框
+      
+      // 3秒后自动隐藏成功提示
+      setTimeout(() => {
+        notifySuccess.value = false
+      }, 3000)
+    } else {
+      notifyError.value = result.error || '发送挪车通知失败'
+    }
+  } catch (err) {
+    console.error("Error sending move car notification:", err)
+    notifyError.value = err.message || '发送挪车通知时出现错误'
+  } finally {
+    notifyLoading.value = false
   }
 }
 
@@ -186,12 +229,58 @@ onMounted(() => {
             </div>
 
             <!-- 物品描述或者丢失上下文 - 只在丢失状态下显示 -->
-            <div v-if="item.status === 'lost' && item.context" class="mb-4">
+            <div v-if="item.status === 'lost' && item.lost_description" class="mb-4">
               <v-alert variant="tonal" color="error" class="context-box">
                 <div class="text-subtitle-1 font-weight-bold mb-2">丢失信息</div>
-                <div>{{ item.context }}</div>
+                <div>{{ item.lost_description }}</div>
               </v-alert>
             </div>
+
+            <!-- 挪车通知 - 只在物品类型为车辆时显示 -->
+            <v-card v-if="item.type === 'car'" variant="outlined" class="mb-4">
+              <v-card-title class="text-h6">
+                <v-icon icon="mdi-car" class="mr-2"></v-icon>
+                挪车通知
+              </v-card-title>
+              <v-card-text>
+                <v-text-field
+                  v-model="notifyPhone"
+                  label="联系电话（可选）"
+                  placeholder="输入您的联系电话"
+                  variant="outlined"
+                  density="comfortable"
+                  class="mb-3"
+                ></v-text-field>
+                <v-btn
+                  :loading="notifyLoading"
+                  :disabled="notifyLoading"
+                  color="primary"
+                  block
+                  @click="sendMoveCarNotification"
+                >
+                  <v-icon icon="mdi-bell-ring" class="mr-2"></v-icon>
+                  发送挪车通知
+                </v-btn>
+                <v-alert
+                  v-if="notifySuccess"
+                  type="success"
+                  variant="tonal"
+                  class="mt-3"
+                >
+                  通知已成功发送！车主将收到挪车提醒。
+                </v-alert>
+                <v-alert
+                  v-if="notifyError"
+                  type="error"
+                  variant="tonal"
+                  class="mt-3"
+                  closable
+                  @click:close="notifyError = null"
+                >
+                  {{ notifyError }}
+                </v-alert>
+              </v-card-text>
+            </v-card>
 
             <!-- 创建者/主人信息 -->
             <v-card variant="outlined" class="mb-4">

@@ -19,6 +19,7 @@ const statusFilter = ref('all')
 // 物品管理
 const editItem = ref({
   id: null,
+  type: '',
   key: '',
   name: '',
   icon: '',
@@ -28,6 +29,7 @@ const editItem = ref({
 })
 const defaultItem = {
   id: null,
+  type: '',
   key: '',
   name: '',
   icon: '',
@@ -98,9 +100,14 @@ const saveItem = async () => {
     
     if (editItem.value.id) {
       const params = new URLSearchParams()
-      const { id, key, name, icon, phone, status, context } = editItem.value
+      const { id, type, key, name, icon, phone, status, context } = editItem.value
       
       params.append('id', id)
+      if (type === "车") {
+        params.append('type', 'car')
+      } else if (type === "一般物品") {
+        params.append('type', 'normal')
+      }
       params.append('key', key)
       params.append('name', name)
       params.append('icon', icon || '')
@@ -114,8 +121,13 @@ const saveItem = async () => {
       data = await apiService.patch(`/api/admin/items?${params.toString()}`, '')
     } else {
       const params = new URLSearchParams()
-      const { key, name, icon, phone } = editItem.value
+      const { key, type, name, icon, phone } = editItem.value
       
+      if (type === "车") {
+        params.append('type', 'car')
+      } else if (type === "一般物品") {
+        params.append('type', 'normal')
+      }
       params.append('key', key)
       params.append('name', name)
       params.append('icon', icon || '')
@@ -378,9 +390,19 @@ const resetFilters = () => {
                     label="物品名称"
                     required
                     :rules="[v => !!v || '物品名称不能为空']"
-                    variant="outlined"
                     density="comfortable"
                   ></v-text-field>
+                </v-col>
+                <v-col cols="12">
+                  <v-select
+                    v-model="editItem.type"
+                    :items="['一般物品', '车']"
+                    label="物品类别"
+                    required
+                    density="comfortable"
+                    hint="可提供类似挪车电话一类服务"
+                    persistent-hint
+                  ></v-select>
                 </v-col>
                 <v-col cols="12">
                   <v-text-field
@@ -389,7 +411,6 @@ const resetFilters = () => {
                     required
                     :rules="[v => !!v || '标识码不能为空']"
                     :disabled="!!editItem.id"
-                    variant="outlined"
                     density="comfortable"
                     hint="用于生成二维码的唯一标识，创建后不可修改"
                     persistent-hint
@@ -404,7 +425,6 @@ const resetFilters = () => {
                       v => !!v || '联系电话不能为空',
                       v => /^\d{11}$/.test(v) || '请输入有效的11位手机号码'
                     ]"
-                    variant="outlined"
                     density="comfortable"
                   ></v-text-field>
                 </v-col>
@@ -413,7 +433,6 @@ const resetFilters = () => {
                     v-model="editItem.icon"
                     label="图标 (可选)"
                     placeholder="例如：mdi-laptop"
-                    variant="outlined"
                     density="comfortable"
                     hint="Material Design Icons的图标名称"
                     persistent-hint
@@ -428,7 +447,6 @@ const resetFilters = () => {
                     ]"
                     label="物品状态"
                     required
-                    variant="outlined"
                     density="comfortable"
                   ></v-select>
                 </v-col>
@@ -436,7 +454,6 @@ const resetFilters = () => {
                   <v-textarea
                     v-model="editItem.context"
                     label="丢失上下文"
-                    variant="outlined"
                     rows="3"
                     placeholder="请描述物品丢失的时间、地点等信息..."
                   ></v-textarea>

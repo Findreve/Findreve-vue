@@ -310,6 +310,27 @@ class ApiService {
   clearCache() {
     storageService.clearAllCache();
   }
+
+  /**
+   * 发送挪车通知
+   * 
+   * @param {number} itemId - 物品ID
+   * @param {string} phone - 挪车发起者电话（可选）
+   * @returns {Promise<Object>} 通知发送结果
+   */
+  async notifyMoveCar(itemId, phone = null) {
+    try {
+      const url = `/api/object/${itemId}?${phone ? `phone=${encodeURIComponent(phone)}` : ''}`;
+      const data = await this.request(url, {
+        method: 'PUT'
+      });
+      
+      return { success: true, data };
+    } catch (error) {
+      console.error('发送挪车通知错误:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 export default new ApiService();
